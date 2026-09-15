@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alusten katsastusrekisteri</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; background: #f4f6f8; color: #222; }
+    header { background: #0b3c5d; color: #fff; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+    .container { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
+    .card { background: #fff; border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+    h2 { margin-top: 0; color: #0b3c5d; border-bottom: 2px solid #eef2f5; padding-bottom: 0.5rem; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.3rem; }
+    input, select, textarea { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    button { background: #1d70b8; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 4px; cursor: pointer; font-weight: 600; }
+    button:hover { background: #004f9e; }
+    .btn-secondary { background: #6c757d; }
+    .btn-secondary:hover { background: #5a6268; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #e1e4e8; }
+    th { background: #f8f9fa; }
+    .status-ok { color: #28a745; font-weight: bold; }
+    .status-warning { color: #d97706; font-weight: bold; }
+    .status-expired { color: #dc3545; font-weight: bold; }
+    .hidden { display: none !important; }
+    .auth-banner { display: flex; gap: 0.5rem; align-items: center; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Alusten katsastusrekisteri</h1>
+  <div id="auth-section">
+    <div id="logged-out-view" class="auth-banner">
+      <input type="email" id="login-email" placeholder="Sähköposti" style="width:180px;">
+      <input type="password" id="login-password" placeholder="Salasana" style="width:140px;">
+      <button onclick="login()">Kirjaudu</button>
+    </div>
+    <div id="logged-in-view" class="auth-banner hidden">
+      <span id="user-email-display"></span>
+      <button class="btn-secondary" onclick="logout()">Kirjaudu ulos</button>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ASETUKSET (Vain kirjautuneille) -->
+  <div id="admin-settings-card" class="card hidden">
+    <h2>Muistutusasetukset</h2>
+    <div class="form-grid">
+      <div>
+        <label>Muistuta päivää ennen erääntymistä:</label>
+        <input type="number" id="setting-days" value="30">
+      </div>
+      <div>
+        <label>Vastuuhenkilön / Seuran sähköposti:</label>
+        <input type="email" id="setting-email">
+      </div>
+    </div>
+    <button onclick="tallennaAsetukset()">Päivitä asetukset</button>
+  </div>
+
+  <!-- UUSI ALUS TAI KATSASTUS (Vain kirjautuneille) -->
+  <div id="katsastaja-tyokalut" class="card hidden">
+    <h2>Kirjaa uusi katsastus tai alus</h2>
+    <div class="form-grid">
+      <div>
+        <label>Katsastusnumero (Avain) *</label>
+        <input type="text" id="k-numero" placeholder="esim. KAT-1002" required>
+      </div>
+      <div>
+        <label>Aluksen nimi</label>
+        <input type="text" id="k-nimi" placeholder="esim. Merilokki">
+      </div>
+      <div>
+        <label>Omistajan nimi</label>
+        <input type="text" id="k-omistaja">
+      </div>
+      <div>
+        <label>Omistajan sähköposti</label>
+        <input type="email" id="k-email">
+      </div>
+      <div>
+        <label>Katsastuspäivä</label>
+        <input type="date" id="k-pvm">
+      </div>
+      <div>
+        <label>Katsastustyyppi</label>
+        <select id="k-tyyppi">
+          <option>Vuosikatsastus</option>
+          <option>Runkokatsastus</option>
+          <option>Peruskatsastus</option>
+        </select>
+      </div>
+      <div>
+        <label>Tulos</label>
+        <select id="k-tulos">
+          <option>Hyväksytty</option>
+          <option>Ehdollinen</option>
+          <option>Hylätty</option>
+        </select>
+      </div>
+      <div>
+        <label>Seuraava eräpäivä *</label>
+        <input type="date" id="k-erapaiva" required>
+      </div>
+      <div>
+        <label>Katsastajan nimi</label>
+        <input type="text" id="k-katsastaja">
+      </div>
+    </div>
+    <div>
+      <label>Huomautukset</label>
+      <textarea id="k-huomiot" rows="2"></textarea>
+    </div>
+    <br>
+    <button onclick="tallennaKatsastus()">Tallenna tiedot rekisteriin</button>
+  </div>
+
+  <!-- LISTAUS JA HAKU -->
+  <div class="card">
+    <h2>Alus- ja katsastuslista</h2>
+    <input type="text" id="haku-kentta" onkeyup="suodataTaulukko()" placeholder="Etsi katsastusnumerolla tai aluksen nimellä..." style="margin-bottom: 1rem; max-width: 400px;">
+    
+    <table id="rekisteri-taulukko">
+      <thead>
+        <tr>
+          <th>Katsastusnumero</th>
+          <th>Alus</th>
+          <th>Omistaja</th>
+          <th>Viimeisin katsastus</th>
+          <th>Seuraava eräpäivä</th>
+          <th>Tila</th>
+          <th>Katsastaja</th>
+        </tr>
+      </thead>
+      <tbody id="taulukko-runko">
+        <tr><td colspan="7">Ladataan tietoja...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+  // SYÖTÄ TÄHÄN SUPABASE-TIETOSI:
+  const SUPABASE_URL = 'https://pdzqyxzzlnfdkupabwip.supabase.co/rest/v1/';
+  const SUPABASE_ANON_KEY = 'sb_publishable_oQKKzDOSP9wtbbXokCDP6w_VvIRTE4l';
+
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // Aseta oletuspäivät lomakkeeseen
+  document.getElementById('k-pvm').valueAsDate = new Date();
+  const nextYear = new Date();
+  nextYear.setFullYear(nextYear.getFullYear() + 1);
+  document.getElementById('k-erapaiva').valueAsDate = nextYear;
+
+  let nykyinenKayttaja = null;
+  let varoitusaikaPaivaa = 30;
+
+  async function alustaSivu() {
+    // 1. Tarkista kirjautuminen
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    paivitaKayttajaTila(session ? session.user : null);
+
+    // 2. Hae asetukset
+    await haeAsetukset();
+
+    // 3. Hae katsastustiedot
+    await lataaRekisteri();
+  }
+
+  function paivitaKayttajaTila(user) {
+    nykyinenKayttaja = user;
+    if (user) {
+      document.getElementById('logged-in-view').classList.remove('hidden');
+      document.getElementById('logged-out-view').classList.add('hidden');
+      document.getElementById('user-email-display').textContent = user.email;
+      document.getElementById('katsastaja-tyokalut').classList.remove('hidden');
+      document.getElementById('admin-settings-card').classList.remove('hidden');
+    } else {
+      document.getElementById('logged-in-view').classList.add('hidden');
+      document.getElementById('logged-out-view').classList.remove('hidden');
+      document.getElementById('katsastaja-tyokalut').classList.add('hidden');
+      document.getElementById('admin-settings-card').classList.add('hidden');
+    }
+  }
+
+  async function login() {
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) alert("Kirjautumisvirhe: " + error.message);
+    else paivitaKayttajaTila(data.user);
+  }
+
+  async function logout() {
+    await supabaseClient.auth.signOut();
+    paivitaKayttajaTila(null);
+  }
+
+  async function haeAsetukset() {
+    const { data } = await supabaseClient.from('jarjestelman_asetukset').select('*').single();
+    if (data) {
+      varoitusaikaPaivaa = data.muistutus_paivaa_ennen;
+      document.getElementById('setting-days').value = data.muistutus_paivaa_ennen;
+      document.getElementById('setting-email').value = data.vastuuhenkilon_sahkoposti;
+    }
+  }
+
+  async function tallennaAsetukset() {
+    const days = parseInt(document.getElementById('setting-days').value, 10);
+    const email = document.getElementById('setting-email').value;
+    const { error } = await supabaseClient
+      .from('jarjestelman_asetukset')
+      .update({ muistutus_paivaa_ennen: days, vastuuhenkilon_sahkoposti: email })
+      .eq('id', 1);
+
+    if (error) alert("Virhe: " + error.message);
+    else {
+      alert("Asetukset päivitetty!");
+      varoitusaikaPaivaa = days;
+      lataaRekisteri();
+    }
+  }
+
+  async function lataaRekisteri() {
+    // Haetaan alukset ja niihin liittyvät katsastukset
+    const { data: alukset, error } = await supabaseClient
+      .from('alukset')
+      .select(`
+        katsastusnumero,
+        nimi,
+        omistaja_nimi,
+        katsastukset (
+          katsastuspaiva,
+          seuraava_erapaiva,
+          tulos,
+          katsastaja_nimi
+        )
+      `);
+
+    const tbody = document.getElementById('taulukko-runko');
+    tbody.innerHTML = '';
+
+    if (error) {
+      tbody.innerHTML = `<tr><td colspan="7">Virhe ladattaessa tietoja: ${error.message}</td></tr>`;
+      return;
+    }
+
+    if (!alukset || alukset.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7">Ei vielä aluksia rekisterissä.</td></tr>`;
+      return;
+    }
+
+    const tanaan = new Date();
+
+    alukset.forEach(a => {
+      // Haetaan uusin katsastus
+      const viimeisin = a.katsastukset && a.katsastukset.length > 0 
+        ? a.katsastukset.sort((x,y) => new Date(y.katsastuspaiva) - new Date(x.katsastuspaiva))[0]
+        : null;
+
+      let statusLuokka = 'status-ok';
+      let statusTeksti = 'Voimassa';
+
+      if (viimeisin && viimeisin.seuraava_erapaiva) {
+        const era = new Date(viimeisin.seuraava_erapaiva);
+        const erotusPaivia = Math.ceil((era - tanaan) / (1000 * 60 * 60 * 24));
+
+        if (erotusPaivia < 0) {
+          statusLuokka = 'status-expired';
+          statusTeksti = 'Vanhentunut';
+        } else if (erotusPaivia <= varoitusaikaPaivaa) {
+          statusLuokka = 'status-warning';
+          statusTeksti = `Erääntyy pian (${erotusPaivia} pv)`;
+        }
+      } else {
+        statusLuokka = 'status-warning';
+        statusTeksti = 'Ei katsastettu';
+      }
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${a.katsastusnumero}</strong></td>
+        <td>${a.nimi}</td>
+        <td>${a.omistaja_nimi}</td>
+        <td>${viimeisin ? viimeisin.katsastuspaiva : '-'}</td>
+        <td>${viimeisin ? viimeisin.seuraava_erapaiva : '-'}</td>
+        <td class="${statusLuokka}">${statusTeksti}</td>
+        <td>${viimeisin ? viimeisin.katsastaja_nimi : '-'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function tallennaKatsastus() {
+    const katsastusnumero = document.getElementById('k-numero').value.trim();
+    const nimi = document.getElementById('k-nimi').value.trim();
+    const omistaja_nimi = document.getElementById('k-omistaja').value.trim();
+    const omistaja_email = document.getElementById('k-email').value.trim();
+
+    if (!katsastusnumero) {
+      alert("Katsastusnumero on pakollinen!");
+      return;
+    }
+
+    // 1. Luodaan tai päivitetään alus (Upsert katsastusnumeron perusteella)
+    const { error: alusVirhe } = await supabaseClient.from('alukset').upsert({
+      katsastusnumero: katsastusnumero,
+      nimi: nimi || 'Tuntematon',
+      omistaja_nimi: omistaja_nimi || 'Ei ilmoitettu',
+      omistaja_email: omistaja_email || ''
+    }, { onConflict: 'katsastusnumero' });
+
+    if (alusVirhe) {
+      alert("Aluksen tallennus epäonnistui: " + alusVirhe.message);
+      return;
+    }
+
+    // 2. Lisätään katsastustapahtuma
+    const { error: katsastusVirhe } = await supabaseClient.from('katsastukset').insert({
+      katsastusnumero: katsastusnumero,
+      katsastuspaiva: document.getElementById('k-pvm').value,
+      katsastustyyppi: document.getElementById('k-tyyppi').value,
+      tulos: document.getElementById('k-tulos').value,
+      seuraava_erapaiva: document.getElementById('k-erapaiva').value,
+      katsastaja_nimi: document.getElementById('k-katsastaja').value || 'Katsastaja',
+      huomautukset: document.getElementById('k-huomiot').value
+    });
+
+    if (katsastusVirhe) {
+      alert("Katsastuksen tallennus epäonnistui: " + katsastusVirhe.message);
+    } else {
+      alert("Tiedot tallennettu onnistuneesti!");
+      lataaRekisteri();
+    }
+  }
+
+  function suodataTaulukko() {
+    const filtteri = document.getElementById('haku-kentta').value.toLowerCase();
+    const rivit = document.querySelectorAll('#taulukko-runko tr');
+    rivit.forEach(rivi => {
+      const teksti = rivi.innerText.toLowerCase();
+      rivi.style.display = teksti.includes(filtteri) ? '' : 'none';
+    });
+  }
+
+  alustaSivu();
+</script>
+
+</body>
+</html>

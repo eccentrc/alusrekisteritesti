@@ -146,8 +146,8 @@
 </div>
 
 <script>
-  // SYÖTÄ TÄHÄN SUPABASE-TIETOSI:
-  const SUPABASE_URL = 'https://pdzqyxzzlnfdkupabwip.supabase.co/rest/v1/';
+  // KORJATTU OSOITE:
+  const SUPABASE_URL = 'https://pdzqyxzzlnfdkupabwip.supabase.co';
   const SUPABASE_ANON_KEY = 'sb_publishable_oQKKzDOSP9wtbbXokCDP6w_VvIRTE4l';
 
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -162,14 +162,9 @@
   let varoitusaikaPaivaa = 30;
 
   async function alustaSivu() {
-    // 1. Tarkista kirjautuminen
     const { data: { session } } = await supabaseClient.auth.getSession();
     paivitaKayttajaTila(session ? session.user : null);
-
-    // 2. Hae asetukset
     await haeAsetukset();
-
-    // 3. Hae katsastustiedot
     await lataaRekisteri();
   }
 
@@ -228,7 +223,6 @@
   }
 
   async function lataaRekisteri() {
-    // Haetaan alukset ja niihin liittyvät katsastukset
     const { data: alukset, error } = await supabaseClient
       .from('alukset')
       .select(`
@@ -259,7 +253,6 @@
     const tanaan = new Date();
 
     alukset.forEach(a => {
-      // Haetaan uusin katsastus
       const viimeisin = a.katsastukset && a.katsastukset.length > 0 
         ? a.katsastukset.sort((x,y) => new Date(y.katsastuspaiva) - new Date(x.katsastuspaiva))[0]
         : null;
@@ -308,7 +301,6 @@
       return;
     }
 
-    // 1. Luodaan tai päivitetään alus (Upsert katsastusnumeron perusteella)
     const { error: alusVirhe } = await supabaseClient.from('alukset').upsert({
       katsastusnumero: katsastusnumero,
       nimi: nimi || 'Tuntematon',
@@ -321,7 +313,6 @@
       return;
     }
 
-    // 2. Lisätään katsastustapahtuma
     const { error: katsastusVirhe } = await supabaseClient.from('katsastukset').insert({
       katsastusnumero: katsastusnumero,
       katsastuspaiva: document.getElementById('k-pvm').value,
